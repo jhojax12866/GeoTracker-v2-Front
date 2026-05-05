@@ -14,7 +14,7 @@ const CONFIG = {
   // ── Cambiar esta URL después del deploy en Railway ──────────────────────────
   BACKEND_URL: window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
     ? "http://localhost:4000"
-    : "https://geotracker-v2-back-production.up.railway.app/",  // ← EDITAR ANTES DE DEPLOY EN VERCEL
+    : "REEMPLAZAR_CON_TU_URL_DE_RAILWAY",  // ← EDITAR ANTES DE DEPLOY EN VERCEL
   // ────────────────────────────────────────────────────────────────────────────
 
   // Configuración de GPS
