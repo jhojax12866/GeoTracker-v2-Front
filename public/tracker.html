@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeoTracker — Compartiendo ubicación</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #080810; --surface: #0f0f1a; --border: #1c1c2e; --border2: #252538;
+      --accent: #00e5a0; --accent2: #00b8ff; --text: #eeeef5;
+      --muted: #55557a; --muted2: #8888aa; --danger: #ff4d6d;
+    }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Syne', sans-serif;
+      min-height: 100dvh; /* dvh: soporta barra del navegador móvil */
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; padding: 1.5rem;
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 70% 50% at 50% 0%, rgba(0,229,160,0.08) 0%, transparent 60%);
+    }
+
+    .wrap { position: relative; z-index: 1; width: 100%; max-width: 400px; }
+
+    /* Logo */
+    .logo { display: flex; align-items: center; gap: 8px; margin-bottom: 1.75rem; }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 15px;
+    }
+    .logo-text { font-size: 0.95rem; font-weight: 800; letter-spacing: -0.02em; }
+    .logo-text span { color: var(--accent); }
+
+    /* Card */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 22px; padding: 2.25rem;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    }
+
+    /* ── Estado: permiso ── */
+    #sPermission { display: flex; flex-direction: column; align-items: center; gap: 1.1rem; text-align: center; }
+    .state-icon {
+      width: 76px; height: 76px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; font-size: 34px;
+      margin-bottom: 0.25rem;
+    }
+    .icon-perm  { background: rgba(0,229,160,0.08); border: 1.5px solid rgba(0,229,160,0.2); }
+    .icon-err   { background: rgba(255,77,109,0.08); border: 1.5px solid rgba(255,77,109,0.2); }
+
+    .state-title { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.03em; }
+    .state-desc  { color: var(--muted2); font-size: 0.85rem; line-height: 1.65; max-width: 290px; }
+
+    /* Tips de precisión */
+    .tips {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1rem; width: 100%; text-align: left;
+    }
+    .tips-title { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+    .tip { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 6px; }
+    .tip:last-child { margin-bottom: 0; }
+    .tip-icon { font-size: 0.75rem; margin-top: 1px; }
+    .tip-text { font-size: 0.75rem; color: var(--muted2); line-height: 1.4; }
+
+    /* Botón primario */
+    .btn-primary {
+      width: 100%; padding: 1rem 1.5rem;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #000; border: none; border-radius: 13px;
+      font-family: 'Syne', sans-serif; font-size: 0.95rem; font-weight: 800;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,229,160,0.3); }
+
+    /* Botón secundario */
+    .btn-secondary {
+      width: 100%; padding: 0.8rem 1.5rem;
+      background: transparent; border: 1px solid var(--border2);
+      color: var(--muted2); border-radius: 13px;
+      font-family: 'Syne', sans-serif; font-size: 0.88rem; font-weight: 700;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .btn-secondary:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* ── Estado: activo ── */
+    #sActive { display: none; flex-direction: column; align-items: center; gap: 1rem; text-align: center; }
+
+    /* Anillo de pulso */
+    .pulse-wrap { position: relative; width: 76px; height: 76px; margin-bottom: 0.25rem; }
+    .pulse-ring {
+      position: absolute; inset: 0; border-radius: 50%;
+      border: 1.5px solid var(--accent);
+      animation: pulse-out 2.2s ease-out infinite;
+    }
+    .pulse-ring:nth-child(2) { animation-delay: 1.1s; }
+    .pulse-core {
+      position: absolute; inset: 14px;
+      background: rgba(0,229,160,0.1); border: 1.5px solid var(--accent);
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+    @keyframes pulse-out {
+      0%   { transform: scale(1); opacity: 0.7; }
+      100% { transform: scale(1.9); opacity: 0; }
+    }
+
+    /* Grid de métricas */
+    .metrics {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 8px; width: 100%;
+    }
+    .metric {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 12px; padding: 0.8rem 1rem; text-align: left;
+    }
+    .metric.full { grid-column: 1 / -1; }
+    .m-label { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    .m-value { font-family: 'Space Mono', monospace; font-size: 0.82rem; color: var(--accent); font-weight: 700; }
+    .m-value.good   { color: var(--accent); }
+    .m-value.medium { color: #ffc83c; }
+    .m-value.bad    { color: var(--danger); }
+
+    /* Badge viewers */
+    .viewers-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(0,184,255,0.08); border: 1px solid rgba(0,184,255,0.2);
+      border-radius: 20px; padding: 5px 14px;
+      font-size: 0.75rem; color: var(--accent2); font-weight: 700;
+    }
+    .vdot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent2); animation: blink 1.5s ease infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    /* Barra de calidad GPS */
+    .quality-bar-wrap { width: 100%; }
+    .quality-label { display: flex; justify-content: space-between; margin-bottom: 5px; }
+    .quality-key   { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+    .quality-val   { font-size: 0.65rem; font-weight: 700; color: var(--muted2); font-family: 'Space Mono', monospace; }
+    .quality-bar   { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .quality-fill  { height: 100%; border-radius: 2px; transition: width 0.5s ease, background 0.5s ease; }
+
+    /* ── Estado: error ── */
+    #sError { display: none; flex-direction: column; align-items: center; gap: 1rem; text-align: center; }
+    .error-detail {
+      background: rgba(255,77,109,0.06); border: 1px solid rgba(255,77,109,0.15);
+      border-radius: 10px; padding: 0.875rem; width: 100%;
+      font-size: 0.8rem; color: var(--danger); line-height: 1.55; text-align: left;
+    }
+
+    .privacy { margin-top: 1.25rem; font-size: 0.7rem; color: var(--muted); display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+    @media (max-width: 400px) {
+      .card { padding: 1.75rem; }
+      .state-title { font-size: 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">
+      <div class="logo-icon">🌍</div>
+      <div class="logo-text">Geo<span>Tracker</span></div>
+    </div>
+
+    <div class="card">
+      <!-- Estado 1: solicitar permiso -->
+      <div id="sPermission">
+        <div class="state-icon icon-perm">📍</div>
+        <div class="state-title">Compartir ubicación</div>
+        <p class="state-desc">Tu posición GPS se enviará en tiempo real. Para máxima precisión, activa el GPS de tu dispositivo.</p>
+
+        <div class="tips">
+          <div class="tips-title">Para mejor precisión</div>
+          <div class="tip"><span class="tip-icon">📶</span><span class="tip-text">Sal a un espacio abierto (exterior)</span></div>
+          <div class="tip"><span class="tip-icon">⚙️</span><span class="tip-text">Activa el GPS de alta precisión en Ajustes</span></div>
+          <div class="tip"><span class="tip-icon">🔋</span><span class="tip-text">No actives el modo ahorro de batería</span></div>
+        </div>
+
+        <button class="btn-primary" onclick="startTracking()">
+          Activar y compartir ubicación
+        </button>
+      </div>
+
+      <!-- Estado 2: tracking activo -->
+      <div id="sActive">
+        <div class="pulse-wrap">
+          <div class="pulse-ring"></div>
+          <div class="pulse-ring"></div>
+          <div class="pulse-core">📡</div>
+        </div>
+
+        <div class="state-title">Compartiendo en vivo</div>
+
+        <div class="metrics">
+          <div class="metric">
+            <div class="m-label">Latitud</div>
+            <div class="m-value" id="mLat">—</div>
+          </div>
+          <div class="metric">
+            <div class="m-label">Longitud</div>
+            <div class="m-value" id="mLng">—</div>
+          </div>
+          <div class="metric">
+            <div class="m-label">Precisión GPS</div>
+            <div class="m-value" id="mAcc">—</div>
+          </div>
+          <div class="metric">
+            <div class="m-label">Velocidad</div>
+            <div class="m-value" id="mSpeed">—</div>
+          </div>
+          <div class="metric full">
+            <div class="m-label">Actualizado</div>
+            <div class="m-value" id="mTime">—</div>
+          </div>
+        </div>
+
+        <!-- Barra de calidad -->
+        <div class="quality-bar-wrap">
+          <div class="quality-label">
+            <span class="quality-key">Calidad GPS</span>
+            <span class="quality-val" id="qLabel">—</span>
+          </div>
+          <div class="quality-bar">
+            <div class="quality-fill" id="qFill" style="width:0%"></div>
+          </div>
+        </div>
+
+        <div class="viewers-badge">
+          <div class="vdot"></div>
+          <span id="viewerCount">0</span> observando
+        </div>
+
+        <button class="btn-secondary" onclick="stopTracking()">Detener tracking</button>
+      </div>
+
+      <!-- Estado 3: error -->
+      <div id="sError">
+        <div class="state-icon icon-err">🚫</div>
+        <div class="state-title">Sin acceso al GPS</div>
+        <div class="error-detail" id="errDetail">Error desconocido</div>
+        <button class="btn-primary" onclick="showState('permission')">Intentar de nuevo</button>
+      </div>
+    </div>
+
+    <div class="privacy">🔒 Tu ubicación no se guarda en ningún servidor</div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    // ── Extraer trackId de la URL ─────────────────────────────────────────────
+    const trackId = window.location.pathname.split("/").pop();
+
+    let socket   = null;
+    let watchId  = null;
+    let lastEmit = 0;
+    let updateCount = 0;
+
+    // Última posición conocida (para calcular distancia entre puntos)
+    let lastPos = null;
+
+    // ── Mostrar estado ────────────────────────────────────────────────────────
+    function showState(name) {
+      ["sPermission", "sActive", "sError"].forEach(id => {
+        document.getElementById(id).style.display = "none";
+      });
+      const map = { permission: "sPermission", active: "sActive", error: "sError" };
+      document.getElementById(map[name]).style.display = "flex";
+    }
+
+    // ── Conectar WebSocket al backend Railway ─────────────────────────────────
+    function connectSocket() {
+      socket = io(CONFIG.BACKEND_URL, {
+        transports: ["websocket", "polling"],
+        reconnection: true,
+        reconnectionDelay:    1000,
+        reconnectionAttempts: 10,
+      });
+
+      socket.on("connect", () => {
+        console.log("[WS] Conectado:", socket.id);
+        socket.emit("tracker:join", { trackId });
+      });
+
+      socket.on("tracker:ready", () => console.log("[WS] Tracker listo:", trackId));
+
+      socket.on("viewers:count", ({ count }) => {
+        document.getElementById("viewerCount").textContent = count;
+      });
+
+      socket.on("disconnect", reason => console.warn("[WS] Desconectado:", reason));
+      socket.on("connect_error", err => console.error("[WS] Error:", err.message));
+      socket.on("error", ({ message }) => showError(message));
+    }
+
+    // ── Iniciar tracking ──────────────────────────────────────────────────────
+    function startTracking() {
+      if (!navigator.geolocation) {
+        showError("Tu navegador no soporta geolocalización.");
+        return;
+      }
+
+      connectSocket();
+
+      watchId = navigator.geolocation.watchPosition(
+        onPosition,
+        onGeoError,
+        {
+          enableHighAccuracy: CONFIG.GPS.enableHighAccuracy,
+          timeout:            CONFIG.GPS.timeout,
+          maximumAge:         CONFIG.GPS.maximumAge,
+        }
+      );
+    }
+
+    // ── Callback de posición exitosa ──────────────────────────────────────────
+    function onPosition(pos) {
+      const { latitude: lat, longitude: lng, accuracy, heading, speed, altitude } = pos.coords;
+      const now = Date.now();
+
+      // FILTRO 1: descartar posiciones con muy baja precisión (>150m)
+      if (accuracy > CONFIG.GPS.MIN_ACCURACY_M) {
+        console.warn(`[GPS] Precisión baja ignorada: ±${Math.round(accuracy)}m`);
+        return;
+      }
+
+      // FILTRO 2: throttle — no enviar más de 1 vez por segundo
+      if (now - lastEmit < CONFIG.GPS.EMIT_INTERVAL_MS) return;
+
+      // FILTRO 3: descartar si no se ha movido lo suficiente
+      if (lastPos) {
+        const dist = haversine(lastPos.lat, lastPos.lng, lat, lng);
+
+        // FILTRO 4: descartar saltos imposibles (GPS glitch)
+        const dtSec = (now - lastEmit) / 1000;
+        const speedCalc = dist / dtSec; // m/s
+        if (speedCalc > CONFIG.GPS.MAX_SPEED_MS && dist > 20) {
+          console.warn(`[GPS] Salto imposible ignorado: ${dist.toFixed(0)}m en ${dtSec.toFixed(1)}s`);
+          return;
+        }
+
+        if (dist < CONFIG.GPS.MIN_DISTANCE_M) return; // No se movió
+      }
+
+      lastEmit = now;
+      lastPos  = { lat, lng };
+      updateCount++;
+
+      // Mostrar estado activo la primera vez
+      if (updateCount === 1) showState("active");
+
+      // Actualizar UI
+      updateMetrics(lat, lng, accuracy, speed);
+
+      // Enviar al servidor
+      if (socket?.connected) {
+        socket.emit("tracker:location", {
+          trackId, lat, lng, accuracy,
+          heading:   heading  ?? null,
+          speed:     speed    ?? null,
+          altitude:  altitude ?? null,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    // ── Actualizar métricas en pantalla ───────────────────────────────────────
+    function updateMetrics(lat, lng, accuracy, speed) {
+      document.getElementById("mLat").textContent   = lat.toFixed(7);
+      document.getElementById("mLng").textContent   = lng.toFixed(7);
+      document.getElementById("mTime").textContent  = new Date().toLocaleTimeString("es-CO");
+
+      // Precisión con color
+      const accEl = document.getElementById("mAcc");
+      const accRound = Math.round(accuracy);
+      accEl.textContent = `±${accRound}m`;
+      accEl.className   = "m-value " + (accRound <= 10 ? "good" : accRound <= 50 ? "medium" : "bad");
+
+      // Velocidad
+      const speedEl = document.getElementById("mSpeed");
+      if (speed != null && speed > 0) {
+        speedEl.textContent = `${(speed * 3.6).toFixed(1)} km/h`;
+      } else {
+        speedEl.textContent = "Estático";
+      }
+
+      // Barra de calidad
+      updateQualityBar(accuracy);
+    }
+
+    function updateQualityBar(accuracy) {
+      // 5m = 100%, 150m = 0%
+      const pct = Math.max(0, Math.min(100, 100 - ((accuracy - 5) / 145) * 100));
+      const fill  = document.getElementById("qFill");
+      const label = document.getElementById("qLabel");
+
+      fill.style.width = pct + "%";
+
+      let quality, color;
+      if (pct >= 75)      { quality = "Excelente"; color = "#00e5a0"; }
+      else if (pct >= 45) { quality = "Buena";     color = "#ffc83c"; }
+      else if (pct >= 20) { quality = "Regular";   color = "#ff8c42"; }
+      else                { quality = "Baja";      color = "#ff4d6d"; }
+
+      fill.style.background = color;
+      label.textContent     = quality;
+    }
+
+    // ── Fórmula Haversine: distancia entre dos coordenadas en metros ──────────
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R  = 6371000; // Radio de la Tierra en metros
+      const φ1 = lat1 * Math.PI / 180;
+      const φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a  = Math.sin(Δφ/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    // ── Error de geolocalización ──────────────────────────────────────────────
+    function onGeoError(err) {
+      const msgs = {
+        1: "Permiso denegado.\n\nVe a Ajustes → Privacidad → Localización y activa el permiso para este sitio web.",
+        2: "Ubicación no disponible. Asegúrate de tener el GPS activado y estar en un área con señal.",
+        3: "Tiempo de espera agotado. Sal a un espacio abierto e intenta de nuevo.",
+      };
+      showError(msgs[err.code] || err.message);
+    }
+
+    function showError(msg) {
+      document.getElementById("errDetail").textContent = msg;
+      showState("error");
+    }
+
+    // ── Detener tracking ──────────────────────────────────────────────────────
+    function stopTracking() {
+      if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+      if (socket)           { socket.disconnect(); socket = null; }
+      lastPos = null; updateCount = 0; lastEmit = 0;
+      showState("permission");
+    }
+
+    window.addEventListener("beforeunload", stopTracking);
+
+    // ── Verificar que la sesión existe antes de mostrar la UI ─────────────────
+    (async () => {
+      try {
+        const res  = await fetch(`${CONFIG.BACKEND_URL}/api/sessions/${trackId}`);
+        const data = await res.json();
+        if (!data.exists) {
+          document.body.innerHTML = `
+            <div style="text-align:center;padding:3rem;font-family:sans-serif;color:#eee;background:#080810;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem">
+              <div style="font-size:3rem">🔍</div>
+              <h2>Sesión no encontrada</h2>
+              <p style="color:#888">Este enlace no existe o ha expirado.</p>
+              <a href="/" style="color:#00e5a0">Generar nuevo enlace</a>
+            </div>`;
+        }
+      } catch(e) { console.warn("[CHECK] No se pudo verificar sesión:", e.message); }
+    })();
+
+    showState("permission");
+  </script>
+</body>
+</html>
