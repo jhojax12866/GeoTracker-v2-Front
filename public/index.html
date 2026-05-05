@@ -74,10 +74,7 @@
     .res-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: blink 1.5s ease infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
     .link-cards { display: flex; flex-direction: column; gap: 10px; }
-    .lc {
-      background: var(--bg); border: 1px solid var(--border);
-      border-radius: 13px; padding: 1rem 1.2rem;
-    }
+    .lc { background: var(--bg); border: 1px solid var(--border); border-radius: 13px; padding: 1rem 1.2rem; }
     .lc-head { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; }
     .lc-dot { width: 7px; height: 7px; border-radius: 50%; }
     .lc-label { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted2); }
@@ -163,8 +160,10 @@
     </div>
     <footer>geotracker v2 · railway + vercel</footer>
   </div>
-  <script src="config.js"></script>
+
   <script>
+    const BACKEND_URL = "https://geotracker-v2-back-production.up.railway.app";
+
     async function gen() {
       const btn = document.getElementById("btn");
       document.getElementById("sp").style.display = "block";
@@ -172,7 +171,7 @@
       document.getElementById("bt").textContent = "Creando...";
       btn.disabled = true;
       try {
-        const r = await fetch(`${CONFIG.BACKEND_URL}/api/sessions`, { method: "POST" });
+        const r = await fetch(`${BACKEND_URL}/api/sessions`, { method: "POST" });
         const d = await r.json();
         const base = window.location.origin;
         const tUrl = `${base}/track/${d.trackId}`;
@@ -184,13 +183,15 @@
         document.getElementById("res").style.display = "block";
         document.getElementById("bt").textContent = "Generar otro";
       } catch(e) {
-        alert("❌ No se pudo conectar al backend.\n¿Está corriendo en el puerto 4000?");
+        alert("❌ No se pudo conectar al backend.\nRevisa que Railway esté corriendo.");
+        console.error(e);
       } finally {
         btn.disabled = false;
         document.getElementById("sp").style.display = "none";
         document.getElementById("ic").style.display = "block";
       }
     }
+
     function cp(id, btn) {
       navigator.clipboard.writeText(document.getElementById(id).value).then(() => {
         btn.textContent = "✓ Copiado"; btn.classList.add("ok");
