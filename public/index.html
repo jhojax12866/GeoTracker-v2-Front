@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeoTracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #080810; --surface: #0f0f1a; --border: #1c1c2e; --border2: #252538;
+      --accent: #00e5a0; --accent2: #00b8ff; --text: #eeeef5; --muted: #55557a; --muted2: #8888aa;
+    }
+    body {
+      background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif;
+      min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; padding: 2rem; overflow-x: hidden;
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 80% 50% at 10% 10%, rgba(0,229,160,0.07) 0%, transparent 60%),
+                  radial-gradient(ellipse 60% 60% at 90% 80%, rgba(0,184,255,0.06) 0%, transparent 60%);
+    }
+    body::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none;
+      background-image: radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+    .wrap { position: relative; z-index: 1; width: 100%; max-width: 500px; }
+    .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 2.5rem; }
+    .logo-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 11px; display: flex; align-items: center; justify-content: center;
+      font-size: 18px; box-shadow: 0 0 24px rgba(0,229,160,0.25);
+    }
+    .logo-text { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.02em; }
+    .logo-text span { color: var(--accent); }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 22px; padding: 2.5rem;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.5);
+    }
+    h1 { font-size: clamp(1.8rem, 5vw, 2.4rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1.1; margin-bottom: 0.75rem; }
+    h1 em {
+      font-style: normal;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    p.sub { color: var(--muted2); font-size: 0.9rem; line-height: 1.65; margin-bottom: 2rem; }
+    .btn-gen {
+      width: 100%; padding: 1.05rem 1.5rem;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #000; border: none; border-radius: 13px;
+      font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 800;
+      cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-gen:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 14px 36px rgba(0,229,160,0.3); }
+    .btn-gen:disabled { opacity: 0.5; cursor: not-allowed; }
+    .spinner {
+      width: 17px; height: 17px;
+      border: 2.5px solid rgba(0,0,0,0.25); border-top-color: #000;
+      border-radius: 50%; animation: spin 0.6s linear infinite; display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .result { display: none; margin-top: 2rem; animation: up 0.3s ease; }
+    @keyframes up { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    .res-tag {
+      font-size: 0.65rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 1rem;
+      display: flex; align-items: center; gap: 7px;
+    }
+    .res-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: blink 1.5s ease infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+    .link-cards { display: flex; flex-direction: column; gap: 10px; }
+    .lc {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 13px; padding: 1rem 1.2rem;
+    }
+    .lc-head { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; }
+    .lc-dot { width: 7px; height: 7px; border-radius: 50%; }
+    .lc-label { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted2); }
+    .lc-desc { margin-left: auto; font-size: 0.62rem; color: var(--muted); font-family: 'Space Mono', monospace; }
+    .lc-row { display: flex; align-items: center; gap: 7px; }
+    .lc-input {
+      flex: 1; font-family: 'Space Mono', monospace; font-size: 0.73rem;
+      color: var(--text); background: transparent; border: none; outline: none;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .btn-s {
+      border: 1px solid var(--border2); background: transparent; color: var(--muted2);
+      border-radius: 7px; padding: 5px 9px; font-size: 0.65rem; font-weight: 700;
+      font-family: 'Syne', sans-serif; cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .btn-s:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-s.ok { background: var(--accent); color: #000; border-color: var(--accent); }
+    a.btn-s { text-decoration: none; display: inline-block; }
+    a.btn-s:hover { border-color: var(--accent2); color: var(--accent2); }
+    .div { height: 1px; background: var(--border); margin: 2rem 0; }
+    .steps { display: flex; flex-direction: column; gap: 10px; }
+    .step { display: flex; gap: 11px; }
+    .sn {
+      width: 23px; height: 23px; min-width: 23px;
+      background: var(--border); border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Space Mono', monospace; font-size: 0.62rem; color: var(--accent); font-weight: 700;
+    }
+    .st { font-size: 0.82rem; color: var(--muted2); padding-top: 2px; line-height: 1.5; }
+    .st strong { color: var(--text); }
+    footer { margin-top: 1.5rem; text-align: center; font-family: 'Space Mono', monospace; font-size: 0.65rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">
+      <div class="logo-icon">🌍</div>
+      <div class="logo-text">Geo<span>Tracker</span></div>
+    </div>
+    <div class="card">
+      <h1>Comparte tu<br/><em>ubicación en vivo</em></h1>
+      <p class="sub">Genera un enlace único y comparte tu GPS en tiempo real desde cualquier dispositivo.</p>
+      <button class="btn-gen" id="btn" onclick="gen()">
+        <span id="ic">⚡</span>
+        <div class="spinner" id="sp"></div>
+        <span id="bt">Generar enlace de tracking</span>
+      </button>
+      <div class="result" id="res">
+        <div class="res-tag"><div class="res-dot"></div>Sesión lista</div>
+        <div class="link-cards">
+          <div class="lc">
+            <div class="lc-head">
+              <div class="lc-dot" style="background:var(--accent)"></div>
+              <span class="lc-label">Tu dispositivo</span>
+              <span class="lc-desc">quien comparte GPS</span>
+            </div>
+            <div class="lc-row">
+              <input class="lc-input" id="tUrl" readonly/>
+              <button class="btn-s" onclick="cp('tUrl',this)">Copiar</button>
+              <a class="btn-s" id="tOpen" href="#" target="_blank">Abrir →</a>
+            </div>
+          </div>
+          <div class="lc">
+            <div class="lc-head">
+              <div class="lc-dot" style="background:var(--accent2)"></div>
+              <span class="lc-label">Visor del mapa</span>
+              <span class="lc-desc">quien observa</span>
+            </div>
+            <div class="lc-row">
+              <input class="lc-input" id="vUrl" readonly/>
+              <button class="btn-s" onclick="cp('vUrl',this)">Copiar</button>
+              <a class="btn-s" id="vOpen" href="#" target="_blank">Abrir →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="div"></div>
+      <div class="steps">
+        <div class="step"><div class="sn">1</div><div class="st"><strong>Genera</strong> los enlaces arriba</div></div>
+        <div class="step"><div class="sn">2</div><div class="st"><strong>Abre el tracker</strong> en el dispositivo a rastrear y acepta el GPS</div></div>
+        <div class="step"><div class="sn">3</div><div class="st"><strong>Abre el visor</strong> en otra pestaña y ve la posición en tiempo real</div></div>
+      </div>
+    </div>
+    <footer>geotracker v2 · railway + vercel</footer>
+  </div>
+  <script src="config.js"></script>
+  <script>
+    async function gen() {
+      const btn = document.getElementById("btn");
+      document.getElementById("sp").style.display = "block";
+      document.getElementById("ic").style.display = "none";
+      document.getElementById("bt").textContent = "Creando...";
+      btn.disabled = true;
+      try {
+        const r = await fetch(`${CONFIG.BACKEND_URL}/api/sessions`, { method: "POST" });
+        const d = await r.json();
+        const base = window.location.origin;
+        const tUrl = `${base}/track/${d.trackId}`;
+        const vUrl = `${base}/view/${d.trackId}`;
+        document.getElementById("tUrl").value = tUrl;
+        document.getElementById("vUrl").value = vUrl;
+        document.getElementById("tOpen").href = tUrl;
+        document.getElementById("vOpen").href = vUrl;
+        document.getElementById("res").style.display = "block";
+        document.getElementById("bt").textContent = "Generar otro";
+      } catch(e) {
+        alert("❌ No se pudo conectar al backend.\n¿Está corriendo en el puerto 4000?");
+      } finally {
+        btn.disabled = false;
+        document.getElementById("sp").style.display = "none";
+        document.getElementById("ic").style.display = "block";
+      }
+    }
+    function cp(id, btn) {
+      navigator.clipboard.writeText(document.getElementById(id).value).then(() => {
+        btn.textContent = "✓ Copiado"; btn.classList.add("ok");
+        setTimeout(() => { btn.textContent = "Copiar"; btn.classList.remove("ok"); }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>

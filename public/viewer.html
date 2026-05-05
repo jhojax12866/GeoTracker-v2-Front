@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeoTracker — Mapa en vivo</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #080810; --surface: #0f0f1a; --surface2: rgba(15,15,26,0.92);
+      --border: #1c1c2e; --border2: #252538;
+      --accent: #00e5a0; --accent2: #00b8ff; --accent3: #a259ff;
+      --text: #eeeef5; --muted: #55557a; --muted2: #8888aa;
+      --danger: #ff4d6d; --warn: #ffc83c;
+    }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; }
+
+    .layout { display: flex; flex-direction: column; height: 100dvh; }
+
+    /* ── Header ── */
+    .header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      height: 52px; padding: 0 1rem;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0; z-index: 1000; gap: 1rem;
+    }
+    .logo { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .logo-icon {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 13px;
+    }
+    .logo-text { font-size: 0.9rem; font-weight: 800; letter-spacing: -0.02em; }
+    .logo-text span { color: var(--accent); }
+
+    .header-center { flex: 1; display: flex; justify-content: center; }
+
+    /* Badge de estado */
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 20px;
+      font-size: 0.7rem; font-weight: 700; border: 1px solid; transition: all 0.3s;
+    }
+    .status-pill.waiting { background: rgba(255,200,60,0.08); border-color: rgba(255,200,60,0.2); color: var(--warn); }
+    .status-pill.live    { background: rgba(0,229,160,0.08); border-color: rgba(0,229,160,0.2); color: var(--accent); }
+    .status-pill.offline { background: rgba(255,77,109,0.08); border-color: rgba(255,77,109,0.2); color: var(--danger); }
+    .s-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .status-pill.live .s-dot { animation: blink 1.2s ease infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .update-counter {
+      font-family: 'Space Mono', monospace; font-size: 0.65rem; color: var(--muted);
+      background: var(--border); border-radius: 6px; padding: 3px 7px;
+    }
+
+    /* ── Mapa ── */
+    .main { flex: 1; position: relative; overflow: hidden; }
+    #map { position: absolute; inset: 0; z-index: 1; }
+
+    /* Filtro oscuro para los tiles */
+    .leaflet-tile-pane { filter: brightness(0.65) saturate(0.6); }
+
+    /* Controles de Leaflet modo oscuro */
+    .leaflet-control-zoom a {
+      background: var(--surface) !important; color: var(--text) !important;
+      border-color: var(--border) !important;
+    }
+    .leaflet-control-zoom a:hover { background: var(--border) !important; }
+    .leaflet-control-attribution {
+      background: rgba(8,8,16,0.75) !important; color: var(--muted) !important;
+      font-size: 0.6rem !important;
+    }
+    .leaflet-control-attribution a { color: var(--muted) !important; }
+    .leaflet-popup-content-wrapper {
+      background: var(--surface) !important; border: 1px solid var(--border) !important;
+      color: var(--text) !important; border-radius: 12px !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+      font-family: 'Space Mono', monospace; font-size: 0.75rem;
+    }
+    .leaflet-popup-tip { background: var(--surface) !important; }
+
+    /* ── Panel de datos (floating) ── */
+    .data-panel {
+      position: absolute; bottom: 1.25rem; left: 50%; transform: translateX(-50%);
+      z-index: 1000;
+      background: var(--surface2); backdrop-filter: blur(20px);
+      border: 1px solid var(--border2); border-radius: 18px;
+      padding: 0.9rem 1.25rem;
+      display: none; /* visible solo cuando hay datos */
+      gap: 1.25rem; align-items: center;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+      max-width: calc(100vw - 2rem);
+    }
+
+    .d-item { text-align: center; min-width: 64px; }
+    .d-label { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+    .d-value { font-family: 'Space Mono', monospace; font-size: 0.78rem; font-weight: 700; color: var(--accent); }
+    .d-value.warn { color: var(--warn); }
+    .d-value.bad  { color: var(--danger); }
+    .d-sep { width: 1px; height: 28px; background: var(--border2); flex-shrink: 0; }
+
+    /* ── Controles flotantes ── */
+    .map-controls {
+      position: absolute; right: 1rem; bottom: 6.5rem;
+      z-index: 1000; display: flex; flex-direction: column; gap: 8px;
+    }
+    .ctrl-btn {
+      background: var(--surface2); backdrop-filter: blur(12px);
+      border: 1px solid var(--border2); color: var(--text);
+      border-radius: 10px; padding: 8px 11px;
+      font-size: 0.72rem; font-weight: 700; font-family: 'Syne', sans-serif;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .ctrl-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(0,229,160,0.08); }
+
+    /* ── Overlay de espera ── */
+    .wait-overlay {
+      position: absolute; inset: 0; z-index: 500;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: rgba(8,8,16,0.82); backdrop-filter: blur(10px);
+      gap: 1rem; padding: 2rem; text-align: center;
+    }
+    .wait-overlay.hidden { display: none; }
+    .wait-icon { font-size: 3.5rem; animation: float 3s ease-in-out infinite; }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+    .wait-title { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.03em; }
+    .wait-desc { color: var(--muted2); font-size: 0.85rem; max-width: 260px; line-height: 1.6; }
+    .wait-id {
+      font-family: 'Space Mono', monospace; font-size: 0.72rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 5px 12px; color: var(--muted2);
+    }
+
+    /* ── Marcador personalizado (pulso de precisión) ── */
+    @keyframes acc-pulse {
+      0%,100% { opacity: 0.15; }
+      50%      { opacity: 0.35; }
+    }
+
+    @media (max-width: 520px) {
+      .data-panel { gap: 0.85rem; padding: 0.75rem 1rem; }
+      .d-value { font-size: 0.7rem; }
+      .d-item { min-width: 50px; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">🌍</div>
+      <div class="logo-text">Geo<span>Tracker</span></div>
+    </div>
+    <div class="header-center">
+      <div class="status-pill waiting" id="statusPill">
+        <div class="s-dot"></div>
+        <span id="statusText">Esperando tracker…</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="update-counter" id="updateCounter" title="Actualizaciones recibidas">0 pts</div>
+    </div>
+  </div>
+
+  <!-- Mapa -->
+  <div class="main">
+    <div id="map"></div>
+
+    <!-- Overlay espera -->
+    <div class="wait-overlay" id="waitOverlay">
+      <div class="wait-icon">📡</div>
+      <div class="wait-title">Esperando ubicación</div>
+      <p class="wait-desc">El mapa se actualizará automáticamente cuando el tracker active su GPS.</p>
+      <div class="wait-id" id="waitId">Sesión: —</div>
+    </div>
+
+    <!-- Panel de datos flotante -->
+    <div class="data-panel" id="dataPanel">
+      <div class="d-item">
+        <div class="d-label">Latitud</div>
+        <div class="d-value" id="pLat">—</div>
+      </div>
+      <div class="d-sep"></div>
+      <div class="d-item">
+        <div class="d-label">Longitud</div>
+        <div class="d-value" id="pLng">—</div>
+      </div>
+      <div class="d-sep"></div>
+      <div class="d-item">
+        <div class="d-label">Precisión</div>
+        <div class="d-value" id="pAcc">—</div>
+      </div>
+      <div class="d-sep"></div>
+      <div class="d-item">
+        <div class="d-label">Velocidad</div>
+        <div class="d-value" id="pSpeed">—</div>
+      </div>
+      <div class="d-sep"></div>
+      <div class="d-item">
+        <div class="d-label">Update</div>
+        <div class="d-value" id="pTime">—</div>
+      </div>
+    </div>
+
+    <!-- Controles del mapa -->
+    <div class="map-controls">
+      <button class="ctrl-btn" id="btnFollow" onclick="toggleFollow()">📍 Seguir</button>
+      <button class="ctrl-btn" id="btnPath" onclick="togglePath()">🛤️ Ruta</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="config.js"></script>
+<script>
+  // ── TrackId desde URL ─────────────────────────────────────────────────────
+  const trackId = window.location.pathname.split("/").pop();
+  document.getElementById("waitId").textContent = `Sesión: ${trackId}`;
+
+  // ── Estado del visor ──────────────────────────────────────────────────────
+  let followMode   = true;   // Seguir automáticamente al tracker
+  let showPath     = true;   // Mostrar línea del recorrido
+  let updateCount  = 0;
+  let lastLat      = null;
+  let lastLng      = null;
+  let firstFix     = true;
+
+  // ── Inicializar mapa ──────────────────────────────────────────────────────
+  const map = L.map("map", {
+    center: CONFIG.MAP.DEFAULT_CENTER,
+    zoom:   CONFIG.MAP.DEFAULT_ZOOM,
+    zoomControl: true,
+  });
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors",
+    maxZoom: 19,
+  }).addTo(map);
+
+  // ── Marcador del tracker ──────────────────────────────────────────────────
+  let marker        = null;
+  let accuracyCircle = null;
+
+  function createMarkerIcon(heading) {
+    // Flecha de dirección si hay heading, sino círculo
+    const hasHeading = heading !== null && heading !== undefined;
+    const rotation   = hasHeading ? heading : 0;
+
+    return L.divIcon({
+      html: `
+        <div style="
+          position: relative;
+          width: 28px; height: 28px;
+        ">
+          <!-- Sombra exterior -->
+          <div style="
+            position: absolute; inset: -6px;
+            border-radius: 50%;
+            background: rgba(0,229,160,0.15);
+            animation: acc-pulse 2s ease infinite;
+          "></div>
+          <!-- Marcador principal -->
+          <div style="
+            width: 28px; height: 28px;
+            background: linear-gradient(135deg, #00e5a0, #00b8ff);
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 0 0 3px rgba(0,229,160,0.3), 0 4px 16px rgba(0,0,0,0.4);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px;
+            ${hasHeading ? `transform: rotate(${rotation}deg);` : ''}
+          ">${hasHeading ? '▲' : '●'}</div>
+        </div>
+      `,
+      className:  "",
+      iconSize:   [28, 28],
+      iconAnchor: [14, 14],
+    });
+  }
+
+  // ── Path (rastro de recorrido) ────────────────────────────────────────────
+  let pathPoints   = []; // Array de [lat, lng]
+  let pathPolyline = L.polyline([], {
+    color:     "#00e5a0",
+    weight:    3,
+    opacity:   0.7,
+    dashArray: null,
+    lineJoin:  "round",
+    lineCap:   "round",
+  }).addTo(map);
+
+  // ── Actualizar marcador en el mapa ────────────────────────────────────────
+  function updateMarker(lat, lng, accuracy, heading) {
+    const latlng = [lat, lng];
+
+    if (!marker) {
+      // Crear marcador por primera vez
+      marker = L.marker(latlng, { icon: createMarkerIcon(heading), zIndexOffset: 1000 })
+        .addTo(map)
+        .bindPopup("", { maxWidth: 220 });
+
+      // Círculo de precisión
+      accuracyCircle = L.circle(latlng, {
+        radius:      accuracy,
+        color:       "#00e5a0",
+        fillColor:   "#00e5a0",
+        fillOpacity: 0.06,
+        weight:      1,
+        dashArray:   "4 6",
+      }).addTo(map);
+    } else {
+      // Animación suave de movimiento
+      animateMarker(marker, marker.getLatLng(), latlng, 600);
+      marker.setIcon(createMarkerIcon(heading));
+      accuracyCircle.setLatLng(latlng);
+      accuracyCircle.setRadius(accuracy);
+    }
+
+    // Actualizar popup
+    marker.getPopup().setContent(`
+      <b style="color:#00e5a0">📍 Tracker activo</b><br>
+      <span style="color:#888">Lat:</span> ${lat.toFixed(7)}<br>
+      <span style="color:#888">Lng:</span> ${lng.toFixed(7)}<br>
+      <span style="color:#888">Precisión:</span> ±${Math.round(accuracy)}m
+    `);
+
+    // Zoom adaptativo según precisión (solo en primer fix o al seguir)
+    if (followMode) {
+      const targetZoom = getAdaptiveZoom(accuracy);
+      if (firstFix) {
+        map.flyTo(latlng, targetZoom, { duration: CONFIG.MAP.FLY_DURATION });
+        firstFix = false;
+      } else {
+        map.panTo(latlng, { animate: true, duration: 0.5 });
+      }
+    }
+  }
+
+  // ── Zoom adaptativo según precisión GPS ───────────────────────────────────
+  function getAdaptiveZoom(accuracy) {
+    if (accuracy <= 5)   return 19;  // < 5m    → máximo zoom
+    if (accuracy <= 10)  return 18;  // < 10m   → calle
+    if (accuracy <= 20)  return 17;  // < 20m   → muy buena
+    if (accuracy <= 50)  return 16;  // < 50m   → buena
+    if (accuracy <= 100) return 15;  // < 100m  → regular
+    return 14;                        // > 100m  → zoom bajo
+  }
+
+  // ── Animación de movimiento suave del marcador ────────────────────────────
+  function animateMarker(marker, fromLatLng, toLatLng, durationMs) {
+    const startTime  = performance.now();
+    const fromLat    = fromLatLng.lat;
+    const fromLng    = fromLatLng.lng;
+    const deltaLat   = toLatLng[0] - fromLat;
+    const deltaLng   = toLatLng[1] - fromLng;
+
+    function step(now) {
+      const elapsed  = now - startTime;
+      const progress = Math.min(elapsed / durationMs, 1);
+      // Easing ease-out
+      const t = 1 - Math.pow(1 - progress, 3);
+
+      marker.setLatLng([fromLat + deltaLat * t, fromLng + deltaLng * t]);
+      if (progress < 1) requestAnimationFrame(step);
+    }
+
+    requestAnimationFrame(step);
+  }
+
+  // ── Actualizar path de recorrido ──────────────────────────────────────────
+  function addToPath(lat, lng) {
+    pathPoints.push([lat, lng]);
+    if (pathPoints.length > CONFIG.MAP.MAX_PATH_POINTS) pathPoints.shift();
+    if (showPath) pathPolyline.setLatLngs(pathPoints);
+  }
+
+  // ── Actualizar panel de datos ─────────────────────────────────────────────
+  function updatePanel(lat, lng, accuracy, speed, timestamp) {
+    document.getElementById("pLat").textContent   = lat.toFixed(7);
+    document.getElementById("pLng").textContent   = lng.toFixed(7);
+    document.getElementById("pTime").textContent  = new Date().toLocaleTimeString("es-CO");
+
+    const accEl = document.getElementById("pAcc");
+    const accRound = Math.round(accuracy);
+    accEl.textContent = `±${accRound}m`;
+    accEl.className   = "d-value" + (accRound <= 10 ? "" : accRound <= 50 ? " warn" : " bad");
+
+    const speedEl = document.getElementById("pSpeed");
+    if (speed != null && speed > 0.5) {
+      speedEl.textContent = `${(speed * 3.6).toFixed(1)} km/h`;
+    } else {
+      speedEl.textContent = "Estático";
+    }
+
+    updateCount++;
+    document.getElementById("updateCounter").textContent = `${updateCount} pts`;
+    document.getElementById("dataPanel").style.display = "flex";
+  }
+
+  // ── Controles ─────────────────────────────────────────────────────────────
+  function toggleFollow() {
+    followMode = !followMode;
+    const btn = document.getElementById("btnFollow");
+    btn.classList.toggle("active", followMode);
+    btn.textContent = followMode ? "📍 Siguiendo" : "📍 Seguir";
+    if (followMode && lastLat !== null) {
+      map.flyTo([lastLat, lastLng], getAdaptiveZoom(30), { duration: 1 });
+    }
+  }
+
+  function togglePath() {
+    showPath = !showPath;
+    const btn = document.getElementById("btnPath");
+    btn.classList.toggle("active", showPath);
+    btn.textContent = showPath ? "🛤️ Ocultar ruta" : "🛤️ Ver ruta";
+
+    if (showPath) {
+      pathPolyline.setLatLngs(pathPoints);
+    } else {
+      pathPolyline.setLatLngs([]);
+    }
+  }
+
+  // Activar botones al inicio
+  document.getElementById("btnFollow").classList.add("active");
+  document.getElementById("btnPath").classList.add("active");
+  document.getElementById("btnFollow").textContent = "📍 Siguiendo";
+  document.getElementById("btnPath").textContent   = "🛤️ Ocultar ruta";
+
+  // Desactivar seguimiento si el usuario mueve el mapa manualmente
+  map.on("dragstart", () => {
+    if (followMode) {
+      followMode = false;
+      const btn = document.getElementById("btnFollow");
+      btn.classList.remove("active");
+      btn.textContent = "📍 Seguir";
+    }
+  });
+
+  // ── Estado del badge ──────────────────────────────────────────────────────
+  function setStatus(state) {
+    const pill = document.getElementById("statusPill");
+    const text = document.getElementById("statusText");
+    pill.className = "status-pill " + state;
+    text.textContent = { waiting: "Esperando tracker…", live: "En vivo", offline: "Tracker desconectado" }[state];
+  }
+
+  // ── Socket.IO ─────────────────────────────────────────────────────────────
+  const socket = io(CONFIG.BACKEND_URL, {
+    transports: ["websocket", "polling"],
+    reconnection: true,
+    reconnectionDelay: 2000,
+  });
+
+  socket.on("connect", () => {
+    console.log("[WS] Conectado:", socket.id);
+    socket.emit("viewer:join", { trackId });
+  });
+
+  socket.on("tracker:status", ({ isConnected }) => setStatus(isConnected ? "live" : "waiting"));
+  socket.on("tracker:connected",    () => setStatus("live"));
+  socket.on("tracker:disconnected", () => setStatus("offline"));
+
+  // ── Recibir historial del path al unirse ──────────────────────────────────
+  socket.on("path:history", ({ path }) => {
+    pathPoints = path.map(p => [p.lat, p.lng]);
+    if (showPath) pathPolyline.setLatLngs(pathPoints);
+    console.log(`[PATH] Historial recibido: ${pathPoints.length} puntos`);
+  });
+
+  // ── Recibir actualización de ubicación ────────────────────────────────────
+  socket.on("location:update", ({ lat, lng, accuracy, heading, speed }) => {
+    lastLat = lat;
+    lastLng = lng;
+
+    // Ocultar overlay
+    document.getElementById("waitOverlay").classList.add("hidden");
+
+    // Actualizar mapa, path y panel
+    updateMarker(lat, lng, accuracy || 30, heading);
+    addToPath(lat, lng);
+    updatePanel(lat, lng, accuracy || 30, speed);
+
+    setStatus("live");
+  });
+
+  socket.on("disconnect", () => console.warn("[WS] Socket desconectado"));
+  socket.on("connect_error", err => console.error("[WS] Error:", err.message));
+  socket.on("error", ({ message }) => console.error("[WS] Error servidor:", message));
+</script>
+</body>
+</html>
